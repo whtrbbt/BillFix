@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Configuration;
 using System.IO;
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -13,9 +14,10 @@ namespace BillFix
         {
             string dirpathIN = @ConfigurationManager.AppSettings.Get("dirpathIN");
             string dirpathOUT = @ConfigurationManager.AppSettings.Get("dirpathOUT");
-
+                       
             FixDir(dirpathIN, dirpathOUT);
-
+            Console.WriteLine("Готово!");
+            Console.ReadKey();
         }
 
         static void FixDir(string inDir, string outDir)
@@ -24,9 +26,9 @@ namespace BillFix
             var dirOUT = new DirectoryInfo(@outDir); //папка с исходящими файлами  
             string dirName = "";
 
-            foreach (DirectoryInfo dir in dirIN.GetDirectories()) //ищем все подкаталоги в каталоге dirIN
+            foreach (DirectoryInfo dir in dirIN.GetDirectories()) // ищем все подкаталоги в каталоге dirIN
             {
-                dirName = Path.GetFileName(dir.FullName); //получаем имя текущего подкаталога
+                dirName = Path.GetFileName(dir.FullName); // получаем имя текущего подкаталога
                 Console.WriteLine(dirName);
                 dirName = dirOUT + @"\" + dirName;
                 if (!Directory.Exists(dirName))
@@ -40,15 +42,29 @@ namespace BillFix
         static void FixFiles(string inDir, string outDir)
         {
             var dirIN = new DirectoryInfo(@inDir); // папка с входящими файлами 
-            var dirOUT = new DirectoryInfo(@outDir); // папка с исходящими файлами             
+            var dirOUT = new DirectoryInfo(@outDir); // папка с исходящими файлами 
+            DirectoryInfo tmpDir; // временная папка для создания архива
+            DirectoryInfo tmpUnZipDir; //временная папка для распаковки архива
             string fileName = "";
 
             foreach (FileInfo file in dirIN.GetFiles())
             {
                 fileName = Path.GetFileName(file.FullName);
                 Console.WriteLine(fileName);
-                fileName = RemoveInvalidFilePathCharacters(fileName, "");
-                FixBill(@file.FullName, @outDir + @"\" + fileName);
+                if (Path.GetExtension(fileName) == ".zip")
+                {
+                    tmpDir = CreateTempDir();
+                    tmpUnZipDir = UnzipFileToTempDir(file.FullName);
+                    FixDir(tmpUnZipDir.FullName, tmpDir.FullName);
+                    ZipFile.CreateFromDirectory(tmpDir.FullName, @outDir + @"\" + fileName);
+                    tmpDir.Delete(true);
+                    tmpUnZipDir.Delete(true);
+                }
+                else //Path.GetExtension(fileName) <> ".zip"
+                {
+                    fileName = RemoveInvalidFilePathCharacters(fileName, "");
+                    FixBill(@file.FullName, @outDir + @"\" + fileName);
+                }
             }
         }
 
@@ -74,7 +90,7 @@ namespace BillFix
             //Console.WriteLine("Файл найден, начинаю работу. Это может занять несколько минут.");
             //Excel.Sheets excelsheets;
 
-            //Выбираем 1 лист
+            // Выбираем 1 лист
             Excel.Worksheet wsh = wb.Worksheets.get_Item(1) as Excel.Worksheet;
 
             Excel.Range excelcells;
@@ -91,9 +107,26 @@ namespace BillFix
         }
 
         public static string RemoveInvalidFilePathCharacters(string filename, string replaceChar)
-        //Удаляет запрещенные символы в именах файлов      
+        // Удаляет запрещенные символы в именах файлов      
         {
                 return Regex.Replace(filename, "[\\[\\]]+", replaceChar, RegexOptions.Compiled);
+        }
+
+        public static DirectoryInfo UnzipFileToTempDir (string fileName)
+        // Распаковывает архив во временную папку и возвращает ссылку на неё.      
+        {
+            DirectoryInfo tempDir;
+            tempDir = CreateTempDir();
+            ZipFile.ExtractToDirectory(fileName, @tempDir.FullName);
+            return tempDir;
+        }
+
+        public static DirectoryInfo CreateTempDir ()
+        // Создает временную папку и возращает ссылку на нее
+        {
+            DirectoryInfo tempDir;
+            tempDir = Directory.CreateDirectory(Path.GetTempPath() + Path.GetRandomFileName());
+            return tempDir;
         }
     }
 }
